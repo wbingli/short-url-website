@@ -40,32 +40,68 @@ app.post('/api/shorten', async (req: express.Request, res: express.Response) => 
     return res.status(400).json({ error: 'Invalid URL format' });
   }
 
-  const shortId = generateShortId();
-  const newMapping: UrlMapping = {
-    originalUrl: url,
-    shortId,
-    createdAt: new Date().toISOString()
-  };
+  try {
+    // Check if KV is available
+    if (!kv) {
+      console.warn('KV storage not available, falling back to memory storage');
+      // Fallback to memory storage
+      const urlDatabase: UrlMapping[] = [];
+      const shortId = generateShortId();
+      const newMapping: UrlMapping = {
+        originalUrl: url,
+        shortId,
+        createdAt: new Date().toISOString()
+      };
+      urlDatabase.push(newMapping);
+      const shortUrl = `${req.protocol}://${req.get('host')}/s/${shortId}`;
+      return res.json({ shortUrl });
+    }
 
-  await kv.set(shortId, {
-    ...newMapping,
-    createdAt: new Date().toISOString()
-  });
+    const shortId = generateShortId();
+    const newMapping: UrlMapping = {
+      originalUrl: url,
+      shortId,
+      createdAt: new Date().toISOString()
+    };
 
-  const shortUrl = `${req.protocol}://${req.get('host')}/s/${shortId}`;
-  res.json({ shortUrl });
+    await kv.set(shortId, newMapping);
+    console.log('URL stored in KV:', shortId);
+
+    const shortUrl = `${req.protocol}://${req.get('host')}/s/${shortId}`;
+    res.json({ shortUrl });
+  } catch (error: any) {
+    console.error('Error storing URL:', error);
+    res.status(500).json({
+      error: 'Failed to create short URL',
+      details: process.env.NODE_ENV === 'development' ? error?.message : undefined
+    });
+  }
 });
 
 // Redirect endpoint
 app.get('/s/:shortId', async (req: express.Request, res: express.Response) => {
   const { shortId } = req.params;
-  const mapping = await kv.get<UrlMapping>(shortId);
 
-  if (!mapping) {
-    return res.status(404).send('Short URL not found');
+  try {
+    if (!kv) {
+      return res.status(500).json({ error: 'Storage service not available' });
+    }
+
+    const mapping = await kv.get<UrlMapping>(shortId);
+    console.log('Retrieved URL mapping:', mapping);
+
+    if (!mapping) {
+      return res.status(404).send('Short URL not found');
+    }
+
+    res.redirect(mapping.originalUrl);
+  } catch (error: any) {
+    console.error('Error retrieving URL:', error);
+    res.status(500).json({
+      error: 'Failed to retrieve URL',
+      details: process.env.NODE_ENV === 'development' ? error?.message : undefined
+    });
   }
-
-  res.redirect(mapping.originalUrl);
 });
 
 
