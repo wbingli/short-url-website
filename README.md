@@ -92,4 +92,4 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 ## Acknowledgments
 - Built with assistance from Anthropic's Claude-3.5-sonnet model via OpenRouter
 - Deployed on Vercel with KV storage
-- Special thanks to the Cline VSCode extension for enabling seamless AI-assisted development
+- Special thanks to the Cline VSCode extension for enabling seamless AI-assisted development (Haha, this is also written by Cline!)
