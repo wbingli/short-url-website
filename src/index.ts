@@ -2,6 +2,13 @@ import express from 'express';
 import path from 'path';
 import crypto from 'crypto';
 import { kv } from '@vercel/kv';
+import dotenv from 'dotenv';
+
+// Load environment variables in development
+if (process.env.NODE_ENV !== 'production') {
+  dotenv.config();
+  console.log('Environment variables loaded from .env file');
+}
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -41,9 +48,13 @@ app.post('/api/shorten', async (req: express.Request, res: express.Response) => 
   }
 
   try {
-    // Check if KV is available
-    if (!kv) {
-      console.warn('KV storage not available, falling back to memory storage');
+    let kvInstance;
+    try {
+      // Try to initialize KV
+      kvInstance = kv;
+      await kvInstance.ping();
+    } catch (error: any) {
+      console.warn('KV storage not available, falling back to memory storage:', error?.message);
       // Fallback to memory storage
       const urlDatabase: UrlMapping[] = [];
       const shortId = generateShortId();
@@ -64,7 +75,7 @@ app.post('/api/shorten', async (req: express.Request, res: express.Response) => 
       createdAt: new Date().toISOString()
     };
 
-    await kv.set(shortId, newMapping);
+    await kvInstance.set(shortId, newMapping);
     console.log('URL stored in KV:', shortId);
 
     const shortUrl = `${req.protocol}://${req.get('host')}/s/${shortId}`;
@@ -83,11 +94,15 @@ app.get('/s/:shortId', async (req: express.Request, res: express.Response) => {
   const { shortId } = req.params;
 
   try {
-    if (!kv) {
-      return res.status(500).json({ error: 'Storage service not available' });
+    let kvInstance;
+    try {
+      kvInstance = kv;
+      await kvInstance.ping();
+    } catch (error: any) {
+      return res.status(500).json({ error: 'Storage service not available', details: error?.message });
     }
 
-    const mapping = await kv.get<UrlMapping>(shortId);
+    const mapping = await kvInstance.get<UrlMapping>(shortId);
     console.log('Retrieved URL mapping:', mapping);
 
     if (!mapping) {
