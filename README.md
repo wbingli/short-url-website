@@ -1,6 +1,6 @@
 # URL Shortener
 
-A URL shortening service built with Express.js and TypeScript, deployed on Vercel with KV storage. This project was created as an experiment using VSCode + Cline + OpenRouter with the Anthropic Claude-3.5-sonnet model.
+A URL shortening service built with Express.js and TypeScript, deployed on Vercel with KV storage. This project was created as an experiment using VSCode + [Cline](https://github.com/cline/cline) + [OpenRouter](https://openrouter.ai/) with the Anthropic Claude-3.5-sonnet model.
 
 ## Development Stats
 - **Development Time**: ~1 hour
