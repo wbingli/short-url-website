@@ -64,7 +64,8 @@ app.post('/api/shorten', async (req: express.Request, res: express.Response) => 
         createdAt: new Date().toISOString()
       };
       urlDatabase.push(newMapping);
-      const shortUrl = `${req.protocol}://${req.get('host')}/s/${shortId}`;
+      const protocol = process.env.NODE_ENV === 'production' ? 'https' : req.protocol;
+      const shortUrl = `${protocol}://${req.get('host')}/s/${shortId}`;
       return res.json({ shortUrl });
     }
 
@@ -78,7 +79,8 @@ app.post('/api/shorten', async (req: express.Request, res: express.Response) => 
     await kvInstance.set(shortId, newMapping);
     console.log('URL stored in KV:', shortId);
 
-    const shortUrl = `${req.protocol}://${req.get('host')}/s/${shortId}`;
+    const protocol = process.env.NODE_ENV === 'production' ? 'https' : req.protocol;
+    const shortUrl = `${protocol}://${req.get('host')}/s/${shortId}`;
     res.json({ shortUrl });
   } catch (error: any) {
     console.error('Error storing URL:', error);
