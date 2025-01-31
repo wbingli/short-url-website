@@ -11,5 +11,11 @@
       "src": "/(.*)",
       "dest": "dist/index.js"
     }
+  ],
+  "kv": [
+    {
+      "id": "urls",
+      "binding": "KV_URLS"
+    }
   ]
 }

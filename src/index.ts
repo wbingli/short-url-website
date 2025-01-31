@@ -1,18 +1,16 @@
 import express from 'express';
 import path from 'path';
 import crypto from 'crypto';
+import { kv } from '@vercel/kv';
 
 const app = express();
 const port = process.env.PORT || 3000;
 
-// In-memory storage for URLs
 interface UrlMapping {
   originalUrl: string;
   shortId: string;
-  createdAt: Date;
+  createdAt: string;
 }
-
-const urlDatabase: UrlMapping[] = [];
 
 // Middleware
 app.use(express.json());
@@ -29,7 +27,7 @@ function generateShortId(): string {
 }
 
 // API endpoint to create short URL
-app.post('/api/shorten', (req: express.Request, res: express.Response) => {
+app.post('/api/shorten', async (req: express.Request, res: express.Response) => {
   const { url } = req.body;
 
   if (!url) {
@@ -46,19 +44,22 @@ app.post('/api/shorten', (req: express.Request, res: express.Response) => {
   const newMapping: UrlMapping = {
     originalUrl: url,
     shortId,
-    createdAt: new Date()
+    createdAt: new Date().toISOString()
   };
 
-  urlDatabase.push(newMapping);
+  await kv.set(shortId, {
+    ...newMapping,
+    createdAt: new Date().toISOString()
+  });
 
   const shortUrl = `${req.protocol}://${req.get('host')}/s/${shortId}`;
   res.json({ shortUrl });
 });
 
 // Redirect endpoint
-app.get('/s/:shortId', (req: express.Request, res: express.Response) => {
+app.get('/s/:shortId', async (req: express.Request, res: express.Response) => {
   const { shortId } = req.params;
-  const mapping = urlDatabase.find(m => m.shortId === shortId);
+  const mapping = await kv.get<UrlMapping>(shortId);
 
   if (!mapping) {
     return res.status(404).send('Short URL not found');
