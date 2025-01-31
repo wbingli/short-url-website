@@ -100,6 +100,12 @@ app.use((_req: express.Request, res: express.Response) => {
   res.status(404).send('Not Found');
 });
 
-app.listen(port, () => {
-  console.log(`Server running at http://localhost:${port}`);
-});
+// For local development
+if (process.env.NODE_ENV !== 'production') {
+  app.listen(port, () => {
+    console.log(`Server running at http://localhost:${port}`);
+  });
+}
+
+// Export the Express app for Vercel
+export default app;
