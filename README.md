@@ -13,7 +13,7 @@ A URL shortening service built with Express.js and TypeScript, deployed on Verce
 ## Features
 - Shorten long URLs to concise, shareable links
 - Persistent storage using Vercel KV (Redis)
-- Fallback to memory storage for local development
+- Uses local Redis for Docker deployment or in-memory storage for simple local development
 - TypeScript for type safety
 - Express.js for the backend
 - Simple, clean frontend interface
@@ -37,19 +37,12 @@ cd short-url-website
 npm install
 ```
 
-3. Create a `.env.local` file with your Vercel KV credentials:
-```env
-KV_URL=your_kv_url_here
-KV_REST_API_URL=your_kv_rest_api_url_here
-KV_REST_API_TOKEN=your_kv_rest_api_token_here
-```
-
-4. Start the development server:
+3. Start the development server:
 ```bash
 npm run dev
 ```
 
-The server will start at http://localhost:3000. If KV credentials are not configured, it will automatically fall back to in-memory storage for local development.
+The server will start at http://localhost:3000. It will automatically use in-memory storage for local development.
 
 ## Running with Docker
 
@@ -58,13 +51,7 @@ To run this project using Docker, follow the steps below:
 ### Prerequisites
 
 - Ensure Docker and Docker Compose are installed on your system.
-- Verify that the required environment variables are set. Create a `.env.local` file with the following content:
-
-```env
-KV_URL=your_kv_url_here
-KV_REST_API_URL=your_kv_rest_api_url_here
-KV_REST_API_TOKEN=your_kv_rest_api_token_here
-```
+- No environment variables are required. The application will automatically use the local Redis container.
 
 ### Build and Run
 
@@ -83,8 +70,9 @@ docker-compose up --build
 
 ### Notes
 
-- The `app` service is built using the provided `Dockerfile` and runs in production mode.
+- The `app` service is built using the provided `Dockerfile` and runs in development mode.
 - The `redis` service uses the official Redis image and persists data in a Docker volume.
+- The docker-compose configuration includes all necessary environment variables to connect to the Redis container.
 
 ## Production Deployment
 
