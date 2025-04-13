@@ -3,11 +3,29 @@ import path from 'path';
 import crypto from 'crypto';
 import { kv } from '@vercel/kv';
 import dotenv from 'dotenv';
+import { createClient } from 'redis';
 
 // Load environment variables in development
 if (process.env.NODE_ENV !== 'production') {
   dotenv.config();
   console.log('Environment variables loaded from .env file');
+}
+
+// Initialize Redis client if using Docker
+let redisClient: any = null;
+if (process.env.KV_REST_API_URL && process.env.KV_REST_API_URL.startsWith('redis://')) {
+  try {
+    redisClient = createClient({
+      url: process.env.KV_REST_API_URL
+    });
+    redisClient.connect().then(() => {
+      console.log('Connected to Redis server');
+    }).catch((err: any) => {
+      console.error('Redis connection error:', err);
+    });
+  } catch (error) {
+    console.error('Failed to initialize Redis client:', error);
+  }
 }
 
 const app = express();
@@ -49,10 +67,18 @@ app.post('/api/shorten', async (req: express.Request, res: express.Response) => 
 
   try {
     let kvInstance;
+    let useRedis = false;
+    
     try {
-      // Try to initialize KV
-      kvInstance = kv;
-      await kvInstance.ping();
+      // Check if we should use Redis client
+      if (redisClient && await redisClient.ping()) {
+        console.log('Using Redis client for storage');
+        useRedis = true;
+      } else {
+        // Try to initialize Vercel KV
+        kvInstance = kv;
+        await kvInstance.ping();
+      }
     } catch (error: any) {
       console.warn('KV storage not available, falling back to memory storage:', error?.message);
       // Fallback to memory storage
@@ -76,8 +102,15 @@ app.post('/api/shorten', async (req: express.Request, res: express.Response) => 
       createdAt: new Date().toISOString()
     };
 
-    await kvInstance.set(shortId, newMapping);
-    console.log('URL stored in KV:', shortId);
+    if (useRedis) {
+      await redisClient.set(shortId, JSON.stringify(newMapping));
+      console.log('URL stored in Redis:', shortId);
+    } else if (kvInstance) {
+      await kvInstance.set(shortId, newMapping);
+      console.log('URL stored in Vercel KV:', shortId);
+    } else {
+      console.log('No storage available, storing in memory only');
+    }
 
     const protocol = process.env.NODE_ENV === 'production' ? 'https' : req.protocol;
     const shortUrl = `${protocol}://${req.get('host')}/s/${shortId}`;
@@ -97,15 +130,36 @@ app.get('/s/:shortId', async (req: express.Request, res: express.Response) => {
 
   try {
     let kvInstance;
+    let useRedis = false;
+    
     try {
-      kvInstance = kv;
-      await kvInstance.ping();
+      // Check if we should use Redis client
+      if (redisClient && await redisClient.ping()) {
+        console.log('Using Redis client for retrieval');
+        useRedis = true;
+      } else {
+        // Try to initialize Vercel KV
+        kvInstance = kv;
+        await kvInstance.ping();
+      }
     } catch (error: any) {
       return res.status(500).json({ error: 'Storage service not available', details: error?.message });
     }
 
-    const mapping = await kvInstance.get<UrlMapping>(shortId);
-    console.log('Retrieved URL mapping:', mapping);
+    let mapping: UrlMapping | null = null;
+    
+    if (useRedis) {
+      const rawMapping = await redisClient.get(shortId);
+      if (rawMapping) {
+        mapping = JSON.parse(rawMapping);
+      }
+      console.log('Retrieved URL mapping from Redis:', mapping);
+    } else if (kvInstance) {
+      mapping = await kvInstance.get<UrlMapping>(shortId);
+      console.log('Retrieved URL mapping from Vercel KV:', mapping);
+    } else {
+      console.log('No storage service available');
+    }
 
     if (!mapping) {
       return res.status(404).send('Short URL not found');

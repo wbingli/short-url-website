@@ -1,0 +1,33 @@
+# Node.js dependencies
+node_modules/
+
+# Environment files
+.env
+.env.*
+
+# Version control
+.git/
+.gitignore
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Documentation
+README.md.bak
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Local development
+.local/
+
+# Logs
+*.log
+
+# Specific exclusions
+.vercel/
