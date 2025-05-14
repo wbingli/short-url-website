@@ -17,12 +17,14 @@ A URL shortening service built with Express.js and TypeScript, deployed on Verce
 - TypeScript for type safety
 - Express.js for the backend
 - Simple, clean frontend interface
+- Automatic health checks via Vercel Cron Jobs
 
 ## Tech Stack
 - TypeScript
 - Express.js
 - Vercel KV (Redis)
 - Vercel for deployment
+- Vercel Cron Jobs for monitoring
 
 ## Local Development
 
@@ -86,6 +88,12 @@ vercel deploy --prod
    - Navigate to Storage tab
    - Create a new KV database
    - The environment variables will be automatically added to your project
+
+3. Enable Cron Jobs:
+   - Vercel will automatically set up the cron job based on the vercel.json configuration
+   - The health check will run every 15 minutes to monitor the application
+   - The health check is environment-aware and will test against the production URL when deployed
+   - No additional setup is required
 
 ## Development Process
 This project was developed using:

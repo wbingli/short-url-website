@@ -4,6 +4,7 @@ import crypto from 'crypto';
 import { kv } from '@vercel/kv';
 import dotenv from 'dotenv';
 import { createClient } from 'redis';
+import healthCheckHandler from './api/health';
 
 // Load environment variables in development
 if (process.env.NODE_ENV !== 'production') {
@@ -68,7 +69,7 @@ app.post('/api/shorten', async (req: express.Request, res: express.Response) => 
   try {
     let kvInstance;
     let useRedis = false;
-    
+
     try {
       // Check if we should use Redis client
       if (redisClient && await redisClient.ping()) {
@@ -131,7 +132,7 @@ app.get('/s/:shortId', async (req: express.Request, res: express.Response) => {
   try {
     let kvInstance;
     let useRedis = false;
-    
+
     try {
       // Check if we should use Redis client
       if (redisClient && await redisClient.ping()) {
@@ -147,7 +148,7 @@ app.get('/s/:shortId', async (req: express.Request, res: express.Response) => {
     }
 
     let mapping: UrlMapping | null = null;
-    
+
     if (useRedis) {
       const rawMapping = await redisClient.get(shortId);
       if (rawMapping) {
@@ -199,6 +200,11 @@ app.get('/', (_req: express.Request, res: express.Response) => {
       console.log('Successfully served index.html');
     }
   });
+});
+
+// Health check API endpoint - delegate to the Vercel handler
+app.get('/api/health', (req, res) => {
+  healthCheckHandler(req as any, res as any);
 });
 
 // Handle 404s
