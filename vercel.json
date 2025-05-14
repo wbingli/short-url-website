@@ -31,7 +31,7 @@
   "crons": [
     {
       "path": "/api/health?source=cron",
-      "schedule": "*/15 * * * *"
+      "schedule": "14 2 * * *"
     }
   ]
 }
