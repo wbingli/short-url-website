@@ -73,7 +73,7 @@ async function migrateRedisData(redisClient: any): Promise<void> {
 }
 
 /**
- * Migrate existing data from Vercel KV
+ * Migrate existing data from Vercel KV by directly querying all keys
  */
 async function migrateVercelKvData(kvInstance: any): Promise<void> {
   try {
@@ -82,66 +82,111 @@ async function migrateVercelKvData(kvInstance: any): Promise<void> {
     let shortIdKeys: string[] = [];
     let count = 0;
     
-    // Try to use the best available method to get keys
+    // Method 1: Try fetching all URL mappings via direct query
+    console.log('Using direct approach with @vercel/kv...');
+    
     try {
-      // First attempt: Try using listKeys if available (better method)
-      if (typeof kvInstance.listKeys === 'function') {
-        console.log('Using listKeys method for Vercel KV...');
-        const keys = await kvInstance.listKeys();
-        console.log(`listKeys returned: ${typeof keys}, isArray: ${Array.isArray(keys)}`);
+      // Based on the logs, it appears the scan returns an array where:
+      // First element: Cursor or string identifier
+      // Second element: Array of actual keys
+      
+      // We'll use our own simple implementation to get all keys
+      let cursor: string | number = 0;
+      
+      const getAllKeys = async () => {
+        const keys: string[] = [];
+        let done = false;
         
-        if (Array.isArray(keys)) {
-          shortIdKeys = keys.filter(key => !key.startsWith('url:'));
-          console.log(`Found ${shortIdKeys.length} potential URL keys using listKeys`);
-        } else {
-          console.log('listKeys did not return an array, falling back to scan');
-          throw new Error('listKeys did not return an array');
-        }
-      } else {
-        throw new Error('listKeys method not available');
-      }
-    } catch (error) {
-      // Second attempt: Fall back to SCAN method
-      console.log('Falling back to SCAN method for Vercel KV...', error);
-      
-      let cursor = 0;
-      
-      // Use SCAN to iterate through all keys
-      do {
-        try {
-          // Log what we're doing to help debug
-          console.log(`Scanning with cursor ${cursor}...`);
-          
-          // Call scan and inspect the result structure
-          const scanResult = await kvInstance.scan(cursor);
-          console.log('Scan result:', JSON.stringify(scanResult, null, 2).substring(0, 200) + '...');
-          
-          // Update cursor for next iteration
-          cursor = scanResult.cursor;
-          
-          // Process the keys - handle different possible structures
-          let batchKeys: string[] = [];
-          
-          if (!scanResult.keys) {
-            console.log('No keys property found in scan result');
-          } else if (Array.isArray(scanResult.keys)) {
-            // Standard array of keys
-            batchKeys = scanResult.keys.filter(key => typeof key === 'string' && !key.startsWith('url:'));
-          } else if (typeof scanResult.keys === 'object') {
-            // Maybe it's an object with keys
-            batchKeys = Object.keys(scanResult.keys).filter(key => !key.startsWith('url:'));
-          } else {
-            console.log(`Unexpected keys type: ${typeof scanResult.keys}`);
+        while (!done) {
+          try {
+            console.log(`Getting keys with cursor: ${cursor}`);
+            
+            // Use the raw command interface to execute SCAN
+            const rawResult = await kvInstance.scan(cursor);
+            console.log(`Raw scan result type: ${typeof rawResult}, isArray: ${Array.isArray(rawResult)}`);
+            
+            // Log first portion of the result to understand structure
+            if (rawResult) {
+              console.log('Scan result structure (first 500 chars):', 
+                JSON.stringify(rawResult).substring(0, 500));
+            }
+            
+            if (Array.isArray(rawResult)) {
+              // Based on the log, rawResult seems to be [cursor, [keys]]
+              if (rawResult.length >= 2) {
+                // Next cursor
+                cursor = rawResult[0];
+                
+                // Keys from this batch
+                const batchKeys = Array.isArray(rawResult[1]) ? rawResult[1] : [];
+                console.log(`Found ${batchKeys.length} keys in batch`);
+                
+                // Add keys that don't start with 'url:' (to skip our reverse index keys)
+                const filteredKeys = batchKeys.filter(k => !k.startsWith('url:'));
+                keys.push(...filteredKeys);
+                
+                // Check if we're done
+                if (cursor === 0 || cursor === '0') {
+                  done = true;
+                }
+              } else {
+                console.log('Unexpected scan result format: array length < 2');
+                done = true;
+              }
+            } else {
+              // If not an array, try to extract cursor and keys differently
+              // This is a fallback attempt that probably won't be needed based on logs
+              console.log('Result not an array, trying to extract cursor and keys');
+              
+              if (rawResult && rawResult.cursor !== undefined) {
+                cursor = rawResult.cursor;
+                
+                if (Array.isArray(rawResult.keys)) {
+                  const filteredKeys = rawResult.keys.filter((k: string) => !k.startsWith('url:'));
+                  keys.push(...filteredKeys);
+                }
+                
+                if (cursor === 0 || cursor === '0') {
+                  done = true;
+                }
+              } else {
+                console.log('Could not extract cursor from result, stopping');
+                done = true;
+              }
+            }
+          } catch (e) {
+            console.error('Error during key retrieval:', e);
+            done = true;
           }
-          
-          // Add to our collection
-          console.log(`Found ${batchKeys.length} potential URL keys in this batch`);
-          shortIdKeys = shortIdKeys.concat(batchKeys);
-        } catch (scanError) {
-          console.error('Error during scan operation:', scanError);
-          break; // Exit the loop if scan fails
         }
-      } while (cursor !== 0);
+        
+        return keys;
+      };
+      
+      shortIdKeys = await getAllKeys();
+      console.log(`Retrieved ${shortIdKeys.length} keys total`);
+    } catch (error) {
+      console.error('Error using direct approach:', error);
+      console.log('Falling back to manual key collection...');
+      
+      // If we failed to get keys automatically, create a manual list of potential IDs
+      // This is a very naive approach, but at least allows some migration to happen
+      
+      shortIdKeys = [];
+      for (let i = 0; i < 10000; i++) {
+        // Check if IDs exist from 0000 to 9999
+        const possibleId = i.toString().padStart(4, '0');
+        try {
+          const mapping = await kvInstance.get(possibleId);
+          if (mapping && mapping.originalUrl) {
+            shortIdKeys.push(possibleId);
+          }
+        } catch (e) {
+          // Ignore errors for keys that don't exist
+        }
+      }
+      
+      console.log(`Retrieved ${shortIdKeys.length} keys using manual approach`);
     }
     
     console.log(`Found total of ${shortIdKeys.length} potential URLs to check in Vercel KV`);
