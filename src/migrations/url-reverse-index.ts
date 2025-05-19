@@ -73,34 +73,88 @@ async function migrateRedisData(redisClient: any): Promise<void> {
 }
 
 /**
- * Migrate existing data from Vercel KV using SCAN
+ * Migrate existing data from Vercel KV
  */
 async function migrateVercelKvData(kvInstance: any): Promise<void> {
   try {
-    console.log('Starting Vercel KV migration using SCAN...');
+    console.log('Starting Vercel KV migration...');
     
-    let cursor = 0;
     let shortIdKeys: string[] = [];
     let count = 0;
     
-    // Use SCAN to iterate through all keys
-    do {
-      // Each SCAN operation returns a cursor and a set of keys
-      const scanResult = await kvInstance.scan(cursor);
-      cursor = scanResult.cursor;
+    // Try to use the best available method to get keys
+    try {
+      // First attempt: Try using listKeys if available (better method)
+      if (typeof kvInstance.listKeys === 'function') {
+        console.log('Using listKeys method for Vercel KV...');
+        const keys = await kvInstance.listKeys();
+        console.log(`listKeys returned: ${typeof keys}, isArray: ${Array.isArray(keys)}`);
+        
+        if (Array.isArray(keys)) {
+          shortIdKeys = keys.filter(key => !key.startsWith('url:'));
+          console.log(`Found ${shortIdKeys.length} potential URL keys using listKeys`);
+        } else {
+          console.log('listKeys did not return an array, falling back to scan');
+          throw new Error('listKeys did not return an array');
+        }
+      } else {
+        throw new Error('listKeys method not available');
+      }
+    } catch (error) {
+      // Second attempt: Fall back to SCAN method
+      console.log('Falling back to SCAN method for Vercel KV...', error);
       
-      // Filter out keys that look like reverse index keys
-      const keys = scanResult.keys.filter((key: string) => !key.startsWith('url:'));
-      shortIdKeys = shortIdKeys.concat(keys);
+      let cursor = 0;
       
-      console.log(`Scanned batch with cursor ${cursor}, found ${keys.length} URL keys`);
-    } while (cursor !== 0);
+      // Use SCAN to iterate through all keys
+      do {
+        try {
+          // Log what we're doing to help debug
+          console.log(`Scanning with cursor ${cursor}...`);
+          
+          // Call scan and inspect the result structure
+          const scanResult = await kvInstance.scan(cursor);
+          console.log('Scan result:', JSON.stringify(scanResult, null, 2).substring(0, 200) + '...');
+          
+          // Update cursor for next iteration
+          cursor = scanResult.cursor;
+          
+          // Process the keys - handle different possible structures
+          let batchKeys: string[] = [];
+          
+          if (!scanResult.keys) {
+            console.log('No keys property found in scan result');
+          } else if (Array.isArray(scanResult.keys)) {
+            // Standard array of keys
+            batchKeys = scanResult.keys.filter(key => typeof key === 'string' && !key.startsWith('url:'));
+          } else if (typeof scanResult.keys === 'object') {
+            // Maybe it's an object with keys
+            batchKeys = Object.keys(scanResult.keys).filter(key => !key.startsWith('url:'));
+          } else {
+            console.log(`Unexpected keys type: ${typeof scanResult.keys}`);
+          }
+          
+          // Add to our collection
+          console.log(`Found ${batchKeys.length} potential URL keys in this batch`);
+          shortIdKeys = shortIdKeys.concat(batchKeys);
+        } catch (scanError) {
+          console.error('Error during scan operation:', scanError);
+          break; // Exit the loop if scan fails
+        }
+      } while (cursor !== 0);
+    }
     
-    console.log(`Found total of ${shortIdKeys.length} URLs to migrate in Vercel KV`);
+    console.log(`Found total of ${shortIdKeys.length} potential URLs to check in Vercel KV`);
+    
+    if (shortIdKeys.length === 0) {
+      console.log('No keys found to migrate. If you know there should be keys, check the Vercel KV API.');
+      return;
+    }
     
     // Process the found keys to create reverse mappings
     for (const shortId of shortIdKeys) {
       try {
+        console.log(`Checking key: ${shortId}`);
         const mapping = await kvInstance.get<UrlMapping>(shortId);
         
         if (mapping && mapping.originalUrl) {
@@ -109,8 +163,10 @@ async function migrateVercelKvData(kvInstance: any): Promise<void> {
           
           // Create the reverse mapping
           await kvInstance.set(reverseKey, shortId);
-          console.log(`Created reverse mapping for ${shortId}`);
+          console.log(`Created reverse mapping for ${shortId} -> ${mapping.originalUrl}`);
           count++;
+        } else {
+          console.log(`Skipping key ${shortId} - not a valid URL mapping`);
         }
       } catch (error) {
         console.error(`Error processing Vercel KV key ${shortId}:`, error);
