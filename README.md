@@ -14,6 +14,7 @@ A URL shortening service built with Express.js and TypeScript, deployed on Verce
 - Shorten long URLs to concise, shareable links
 - Persistent storage using Vercel KV (Redis)
 - Uses local Redis for Docker deployment or in-memory storage for simple local development
+- Intelligent URL handling (returns existing short URL when the same URL is submitted)
 - TypeScript for type safety
 - Express.js for the backend
 - Simple, clean frontend interface
@@ -94,6 +95,10 @@ vercel deploy --prod
    - The health check will run every 15 minutes to monitor the application
    - The health check is environment-aware and will test against the production URL when deployed
    - No additional setup is required
+
+4. Additional Environment Variables:
+   - `RUN_URL_MIGRATION`: Set to 'true' when deploying to run the one-time URL reverse index migration
+   - After verifying migration worked correctly, set back to 'false' to prevent redundant migrations
 
 ## Development Process
 This project was developed using:

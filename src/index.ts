@@ -5,6 +5,7 @@ import { kv } from '@vercel/kv';
 import dotenv from 'dotenv';
 import { createClient } from 'redis';
 import healthCheckHandler from './api/health';
+import { createHash } from 'crypto';
 
 // Load environment variables in development
 if (process.env.NODE_ENV !== 'production') {
@@ -52,6 +53,59 @@ function generateShortId(): string {
   return crypto.randomBytes(4).toString('hex');
 }
 
+// Create a hash of the URL to use as a key in the reverse index
+function hashUrl(url: string): string {
+  return createHash('md5').update(url).digest('hex');
+}
+
+// Migrate existing data to create the reverse index
+async function migrateExistingData(useRedis: boolean, kvInstance: any = null): Promise<void> {
+  try {
+    console.log('Starting migration to create URL reverse index...');
+    
+    if (useRedis && redisClient) {
+      // Get all keys (short IDs) from Redis
+      const keys = await redisClient.keys('*');
+      
+      // Skip keys that look like they might be from the reverse index (contain URL hash prefix)
+      const shortIdKeys = keys.filter((key: string) => !key.startsWith('url:'));
+      
+      console.log(`Found ${shortIdKeys.length} URLs to migrate`);
+      
+      // For each short ID, create a reverse mapping
+      for (const shortId of shortIdKeys) {
+        const rawMapping = await redisClient.get(shortId);
+        if (rawMapping) {
+          try {
+            const mapping = JSON.parse(rawMapping);
+            if (mapping.originalUrl) {
+              const urlHash = hashUrl(mapping.originalUrl);
+              const reverseKey = `url:${urlHash}`;
+              
+              // Create the reverse mapping
+              await redisClient.set(reverseKey, shortId);
+              console.log(`Created reverse mapping for ${shortId}`);
+            }
+          } catch (error) {
+            console.error(`Error processing key ${shortId}:`, error);
+          }
+        }
+      }
+      
+      console.log('Migration to Redis completed successfully');
+    } else if (kvInstance) {
+      // For Vercel KV, we need to scan all keys
+      // Note: This implementation would need to be adjusted based on Vercel KV's API
+      // as it may not support listing all keys in the same way Redis does
+      console.log('Migration for Vercel KV would require a different approach');
+      // Implementation would be added here when Vercel KV scanning capabilities are known
+    }
+  } catch (error) {
+    console.error('Migration error:', error);
+    throw error;
+  }
+}
+
 // API endpoint to create short URL
 app.post('/api/shorten', async (req: express.Request, res: express.Response) => {
   const { url } = req.body;
@@ -96,26 +150,65 @@ app.post('/api/shorten', async (req: express.Request, res: express.Response) => 
       return res.json({ shortUrl });
     }
 
-    const shortId = generateShortId();
-    const newMapping: UrlMapping = {
-      originalUrl: url,
-      shortId,
-      createdAt: new Date().toISOString()
-    };
+    // Check if this URL has already been shortened
+    const urlHash = hashUrl(url);
+    const reverseKey = `url:${urlHash}`;
+    let shortId;
+    let isExisting = false;
 
     if (useRedis) {
-      await redisClient.set(shortId, JSON.stringify(newMapping));
-      console.log('URL stored in Redis:', shortId);
+      // Check if URL exists in Redis reverse index
+      shortId = await redisClient.get(reverseKey);
+      isExisting = !!shortId;
+      
+      if (!isExisting) {
+        // Generate new shortId and store mappings
+        shortId = generateShortId();
+        const newMapping: UrlMapping = {
+          originalUrl: url,
+          shortId,
+          createdAt: new Date().toISOString()
+        };
+        
+        // Store both the forward mapping (shortId -> URL data) and reverse mapping (URL hash -> shortId)
+        await redisClient.set(shortId, JSON.stringify(newMapping));
+        await redisClient.set(reverseKey, shortId);
+        console.log('New URL stored in Redis:', shortId);
+      } else {
+        console.log('Found existing short URL in Redis:', shortId);
+      }
     } else if (kvInstance) {
-      await kvInstance.set(shortId, newMapping);
-      console.log('URL stored in Vercel KV:', shortId);
+      // Check if URL exists in Vercel KV reverse index
+      shortId = await kvInstance.get(reverseKey);
+      isExisting = !!shortId;
+      
+      if (!isExisting) {
+        // Generate new shortId and store mappings
+        shortId = generateShortId();
+        const newMapping: UrlMapping = {
+          originalUrl: url,
+          shortId,
+          createdAt: new Date().toISOString()
+        };
+        
+        // Store both the forward mapping (shortId -> URL data) and reverse mapping (URL hash -> shortId)
+        await kvInstance.set(shortId, newMapping);
+        await kvInstance.set(reverseKey, shortId);
+        console.log('New URL stored in Vercel KV:', shortId);
+      } else {
+        console.log('Found existing short URL in Vercel KV:', shortId);
+      }
     } else {
       console.log('No storage available, storing in memory only');
+      shortId = generateShortId();
     }
 
     const protocol = process.env.NODE_ENV === 'production' ? 'https' : req.protocol;
     const shortUrl = `${protocol}://${req.get('host')}/s/${shortId}`;
-    res.json({ shortUrl });
+    res.json({ 
+      shortUrl,
+      isExisting: isExisting || false
+    });
   } catch (error: any) {
     console.error('Error storing URL:', error);
     res.status(500).json({
@@ -213,11 +306,55 @@ app.use((_req: express.Request, res: express.Response) => {
   res.status(404).send('Not Found');
 });
 
+// Run the migration when the server starts, controlled by environment variable
+async function runMigration() {
+  // Check if migration should run based on environment variable
+  const shouldRunMigration = process.env.RUN_URL_MIGRATION === 'true';
+  
+  // Skip migration if not enabled
+  if (!shouldRunMigration) {
+    console.log('URL migration skipped - set RUN_URL_MIGRATION=true to enable');
+    return;
+  }
+
+  try {
+    console.log('Starting URL reverse index migration...');
+    let kvInstance;
+    let useRedis = false;
+
+    // Determine which storage to use
+    try {
+      if (redisClient && await redisClient.ping()) {
+        useRedis = true;
+      } else {
+        kvInstance = kv;
+        await kvInstance.ping();
+      }
+
+      // Run the migration
+      await migrateExistingData(useRedis, kvInstance);
+      console.log('Migration completed successfully');
+      console.log('IMPORTANT: After verification, set RUN_URL_MIGRATION=false to prevent running migration again');
+    } catch (error: any) {
+      console.error('Failed to run migration:', error?.message);
+    }
+  } catch (error: any) {
+    console.error('Error during startup migration:', error);
+  }
+}
+
 // For local development
 if (process.env.NODE_ENV !== 'production') {
-  app.listen(port, () => {
+  app.listen(port, async () => {
     console.log(`Server running at http://localhost:${port}`);
+    
+    // In development, only run migration if explicitly enabled
+    // Default is disabled for local environments
+    await runMigration();
   });
+} else {
+  // For production, run migration during startup based on environment variable
+  runMigration();
 }
 
 // Export the Express app for Vercel
