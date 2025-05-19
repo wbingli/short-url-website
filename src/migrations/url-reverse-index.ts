@@ -121,8 +121,10 @@ async function migrateVercelKvData(kvInstance: any): Promise<void> {
                 const batchKeys = Array.isArray(rawResult[1]) ? rawResult[1] : [];
                 console.log(`Found ${batchKeys.length} keys in batch`);
                 
-                // Add keys that don't start with 'url:' (to skip our reverse index keys)
-                const filteredKeys = batchKeys.filter(k => !k.startsWith('url:'));
+                // First ensure all keys are strings, then filter out our reverse index keys
+                const stringKeys = batchKeys.map(k => String(k));
+                const filteredKeys = stringKeys.filter(k => !k.startsWith('url:'));
+                console.log(`Filtered to ${filteredKeys.length} keys after removing url: prefix keys`);
                 keys.push(...filteredKeys);
                 
                 // Check if we're done
@@ -142,7 +144,9 @@ async function migrateVercelKvData(kvInstance: any): Promise<void> {
                 cursor = rawResult.cursor;
                 
                 if (Array.isArray(rawResult.keys)) {
-                  const filteredKeys = rawResult.keys.filter((k: string) => !k.startsWith('url:'));
+                  // Ensure all keys are strings before filtering
+                  const stringKeys = rawResult.keys.map((k: any) => String(k));
+                  const filteredKeys = stringKeys.filter(k => !k.startsWith('url:'));
                   keys.push(...filteredKeys);
                 }
                 
@@ -197,10 +201,20 @@ async function migrateVercelKvData(kvInstance: any): Promise<void> {
     }
     
     // Process the found keys to create reverse mappings
-    for (const shortId of shortIdKeys) {
+    for (const key of shortIdKeys) {
       try {
+        // Ensure we're working with a string key
+        const shortId = String(key);
         console.log(`Checking key: ${shortId}`);
+        
+        // Get the URL mapping
         const mapping = await kvInstance.get<UrlMapping>(shortId);
+        
+        // Log the mapping type and structure for debugging
+        console.log(`Mapping for ${shortId}: ${mapping ? 'found' : 'not found'}, type: ${typeof mapping}`);
+        if (mapping) {
+          console.log(`Has originalUrl: ${!!mapping.originalUrl}`);
+        }
         
         if (mapping && mapping.originalUrl) {
           const urlHash = hashUrl(mapping.originalUrl);
@@ -214,7 +228,7 @@ async function migrateVercelKvData(kvInstance: any): Promise<void> {
           console.log(`Skipping key ${shortId} - not a valid URL mapping`);
         }
       } catch (error) {
-        console.error(`Error processing Vercel KV key ${shortId}:`, error);
+        console.error(`Error processing Vercel KV key ${key}:`, error);
       }
     }
     
