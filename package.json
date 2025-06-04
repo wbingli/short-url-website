@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node dist/index.js",
     "build": "tsc",
-    "dev": "ts-node src/index.ts"
+    "dev": "ts-node src/index.ts",
+    "migrate": "ts-node scripts/run-url-migration.ts"
   },
   "dependencies": {
     "@types/express": "^4.17.21",

@@ -5,7 +5,7 @@ import { kv } from '@vercel/kv';
 import dotenv from 'dotenv';
 import { createClient } from 'redis';
 import healthCheckHandler from './api/health';
-import { hashUrl, migrateUrlReverseIndex } from './migrations/url-reverse-index';
+import { hashUrl } from './migrations/url-reverse-index';
 import { UrlMapping } from './types';
 
 // Load environment variables in development
@@ -252,55 +252,14 @@ app.use((_req: express.Request, res: express.Response) => {
   res.status(404).send('Not Found');
 });
 
-// Run the migration when the server starts, controlled by environment variable
-async function runMigration() {
-  // Check if migration should run based on environment variable
-  const shouldRunMigration = process.env.RUN_URL_MIGRATION === 'true';
-  
-  // Skip migration if not enabled
-  if (!shouldRunMigration) {
-    console.log('URL migration skipped - set RUN_URL_MIGRATION=true to enable');
-    return;
-  }
-
-  try {
-    console.log('Starting URL reverse index migration...');
-    let kvInstance;
-    let useRedis = false;
-
-    // Determine which storage to use
-    try {
-      if (redisClient && await redisClient.ping()) {
-        useRedis = true;
-      } else {
-        kvInstance = kv;
-        await kvInstance.ping();
-      }
-
-      // Run the migration using the dedicated migration module
-      await migrateUrlReverseIndex(useRedis, redisClient, kvInstance);
-      console.log('Migration completed successfully');
-      console.log('IMPORTANT: After verification, set RUN_URL_MIGRATION=false to prevent running migration again');
-    } catch (error: any) {
-      console.error('Failed to run migration:', error?.message);
-    }
-  } catch (error: any) {
-    console.error('Error during startup migration:', error);
-  }
-}
+// Migration has been moved to a separate script
+// Run it with: npm run migrate
 
 // For local development
 if (process.env.NODE_ENV !== 'production') {
-  app.listen(port, async () => {
+  app.listen(port, () => {
     console.log(`Server running at http://localhost:${port}`);
-    
-    // In development, only run migration if explicitly enabled
-    // Default is disabled for local environments
-    await runMigration();
   });
-} else {
-  // For production, run migration during startup based on environment variable
-  runMigration();
 }
 
 // Export the Express app for Vercel

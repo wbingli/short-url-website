@@ -96,9 +96,14 @@ vercel deploy --prod
    - The health check is environment-aware and will test against the production URL when deployed
    - No additional setup is required
 
-4. Additional Environment Variables:
-   - `RUN_URL_MIGRATION`: Set to 'true' when deploying to run the one-time URL reverse index migration
-   - After verifying migration worked correctly, set back to 'false' to prevent redundant migrations
+4. Running the URL Migration Script:
+   - The URL reverse index migration has been moved to a separate script
+   - To run the migration:
+     ```bash
+     npm run migrate
+     ```
+   - This script will create reverse index mappings for all existing URLs
+   - It works with both Vercel KV and Redis storage
 
 ## Development Process
 This project was developed using:
