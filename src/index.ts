@@ -89,15 +89,33 @@ function adminAuth(req: express.Request, res: express.Response, next: express.Ne
     return res.status(401).json({ error: 'Authentication required' });
   }
   
-  const base64Credentials = authHeader.split(' ')[1];
-  const credentials = Buffer.from(base64Credentials, 'base64').toString('utf-8');
-  const [username, password] = credentials.split(':');
-  
-  if (username === adminUsername && password === adminPassword) {
-    next();
-  } else {
+  try {
+    const base64Credentials = authHeader.split(' ')[1];
+    if (!base64Credentials) {
+      res.setHeader('WWW-Authenticate', 'Basic realm="Admin Area"');
+      return res.status(401).json({ error: 'Invalid authorization header' });
+    }
+    
+    const credentials = Buffer.from(base64Credentials, 'base64').toString('utf-8');
+    const colonIndex = credentials.indexOf(':');
+    
+    if (colonIndex === -1) {
+      res.setHeader('WWW-Authenticate', 'Basic realm="Admin Area"');
+      return res.status(401).json({ error: 'Invalid credentials format' });
+    }
+    
+    const username = credentials.substring(0, colonIndex);
+    const password = credentials.substring(colonIndex + 1);
+    
+    if (username === adminUsername && password === adminPassword) {
+      next();
+    } else {
+      res.setHeader('WWW-Authenticate', 'Basic realm="Admin Area"');
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+  } catch (error) {
     res.setHeader('WWW-Authenticate', 'Basic realm="Admin Area"');
-    return res.status(401).json({ error: 'Invalid credentials' });
+    return res.status(401).json({ error: 'Authentication failed' });
   }
 }
 

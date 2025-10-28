@@ -10,6 +10,8 @@ The admin dashboard is accessible at `/admin` path.
 
 The admin dashboard and stats API are protected with HTTP Basic Authentication.
 
+> ⚠️ **SECURITY WARNING**: The default credentials are publicly known. You MUST change them immediately after deployment, especially for production environments.
+
 **Default Credentials:**
 - Username: `admin`
 - Password: `admin123`

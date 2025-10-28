@@ -244,7 +244,6 @@
 
     <script>
         let isLoading = false;
-        let authCredentials = null;
 
         async function loadStats() {
             if (isLoading) return;
@@ -262,31 +261,23 @@
             errorDiv.style.display = 'none';
 
             try {
-                const headers = {};
-                if (authCredentials) {
-                    headers['Authorization'] = `Basic ${authCredentials}`;
-                }
+                // Browser will automatically handle HTTP Basic Auth via built-in dialog
+                const response = await fetch('/api/stats');
                 
-                const response = await fetch('/api/stats', { headers });
-                
-                // If 401, show authentication error
+                // If 401, show authentication message
                 if (response.status === 401) {
-                    // Check if we can use HTTP Basic Auth from browser
-                    if (!authCredentials) {
-                        errorDiv.innerHTML = `
-                            <strong>Authentication Required</strong><br>
-                            Please reload the page and enter credentials when prompted.<br>
-                            <em>Default credentials: username=<code>admin</code>, password=<code>admin123</code></em><br>
-                            <small>You can change these by setting ADMIN_USERNAME and ADMIN_PASSWORD environment variables.</small>
-                        `;
-                        errorDiv.style.display = 'block';
-                        loadingDiv.style.display = 'none';
-                        refreshBtn.disabled = false;
-                        refreshBtn.textContent = '🔄 Refresh Data';
-                        isLoading = false;
-                        return;
-                    }
-                    throw new Error('Invalid credentials');
+                    errorDiv.innerHTML = `
+                        <strong>Authentication Required</strong><br>
+                        Please reload the page and enter credentials when prompted by your browser.<br>
+                        <em>Default credentials: username=<code>admin</code>, password=<code>admin123</code></em><br>
+                        <small>You can change these by setting ADMIN_USERNAME and ADMIN_PASSWORD environment variables.</small>
+                    `;
+                    errorDiv.style.display = 'block';
+                    loadingDiv.style.display = 'none';
+                    refreshBtn.disabled = false;
+                    refreshBtn.textContent = '🔄 Refresh Data';
+                    isLoading = false;
+                    return;
                 }
                 
                 const data = await response.json();
