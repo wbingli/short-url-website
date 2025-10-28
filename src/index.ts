@@ -76,6 +76,31 @@ async function getStorageConfig() {
 
 // Migration and hashing functions moved to src/migrations/url-reverse-index.ts
 
+// Simple authentication middleware for admin endpoints
+function adminAuth(req: express.Request, res: express.Response, next: express.NextFunction) {
+  const authHeader = req.headers.authorization;
+  
+  // Get admin credentials from environment variables
+  const adminUsername = process.env.ADMIN_USERNAME || 'admin';
+  const adminPassword = process.env.ADMIN_PASSWORD || 'admin123';
+  
+  if (!authHeader || !authHeader.startsWith('Basic ')) {
+    res.setHeader('WWW-Authenticate', 'Basic realm="Admin Area"');
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+  
+  const base64Credentials = authHeader.split(' ')[1];
+  const credentials = Buffer.from(base64Credentials, 'base64').toString('utf-8');
+  const [username, password] = credentials.split(':');
+  
+  if (username === adminUsername && password === adminPassword) {
+    next();
+  } else {
+    res.setHeader('WWW-Authenticate', 'Basic realm="Admin Area"');
+    return res.status(401).json({ error: 'Invalid credentials' });
+  }
+}
+
 // API endpoint to create short URL
 app.post('/api/shorten', async (req: express.Request, res: express.Response) => {
   const { url } = req.body;
@@ -271,7 +296,7 @@ app.get('/api/health', (req, res) => {
 });
 
 // Stats API endpoint for admin dashboard
-app.get('/api/stats', async (req, res) => {
+app.get('/api/stats', adminAuth, async (req, res) => {
   try {
     const storage = await getStorageConfig();
     await getStats(req, res, storage);
@@ -285,7 +310,7 @@ app.get('/api/stats', async (req, res) => {
   }
 });
 
-// Serve admin.html for admin path
+// Serve admin.html for admin path (no auth on page, only on API)
 app.get('/admin', (_req: express.Request, res: express.Response) => {
   const adminPath = path.join(publicPath, 'admin.html');
   console.log('Attempting to serve admin.html from:', adminPath);
