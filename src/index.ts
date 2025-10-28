@@ -5,6 +5,7 @@ import { kv } from '@vercel/kv';
 import dotenv from 'dotenv';
 import { createClient } from 'redis';
 import healthCheckHandler from './api/health';
+import { getStats } from './api/stats';
 import { hashUrl } from './migrations/url-reverse-index';
 import { UrlMapping } from './types';
 
@@ -48,6 +49,29 @@ app.use((req: express.Request, res: express.Response, next: express.NextFunction
 // Generate short ID
 function generateShortId(): string {
   return crypto.randomBytes(4).toString('hex');
+}
+
+// Helper function to get storage configuration
+async function getStorageConfig() {
+  let useRedis = false;
+  let kvInstance;
+
+  try {
+    // Check if we should use Redis client
+    if (redisClient && await redisClient.ping()) {
+      console.log('Using Redis client for storage');
+      useRedis = true;
+      return { useRedis, redisClient, kvInstance: null };
+    } else {
+      // Try to initialize Vercel KV
+      kvInstance = kv;
+      await kvInstance.ping();
+      return { useRedis: false, redisClient: null, kvInstance };
+    }
+  } catch (error: any) {
+    console.warn('KV storage not available:', error?.message);
+    return { useRedis: false, redisClient: null, kvInstance: null };
+  }
 }
 
 // Migration and hashing functions moved to src/migrations/url-reverse-index.ts
@@ -244,6 +268,36 @@ app.get('/', (_req: express.Request, res: express.Response) => {
 // Health check API endpoint - delegate to the Vercel handler
 app.get('/api/health', (req, res) => {
   healthCheckHandler(req as any, res as any);
+});
+
+// Stats API endpoint for admin dashboard
+app.get('/api/stats', async (req, res) => {
+  try {
+    const storage = await getStorageConfig();
+    await getStats(req, res, storage);
+  } catch (error: any) {
+    console.error('Error in stats endpoint:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch statistics',
+      details: process.env.NODE_ENV === 'development' ? error?.message : undefined
+    });
+  }
+});
+
+// Serve admin.html for admin path
+app.get('/admin', (_req: express.Request, res: express.Response) => {
+  const adminPath = path.join(publicPath, 'admin.html');
+  console.log('Attempting to serve admin.html from:', adminPath);
+
+  res.sendFile(adminPath, (err) => {
+    if (err) {
+      console.error('Error serving admin.html:', err);
+      res.status(500).send('Error loading admin page');
+    } else {
+      console.log('Successfully served admin.html');
+    }
+  });
 });
 
 // Handle 404s
