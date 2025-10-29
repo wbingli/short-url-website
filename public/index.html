@@ -356,33 +356,79 @@
             }
         }
 
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
         function showSuccess(shortUrl) {
             const resultDiv = document.getElementById('result');
             resultDiv.className = 'success';
-            resultDiv.innerHTML = `
-                <div class="result-label">
-                    <span class="success-icon">✅</span>
-                    <span>Your short URL is ready!</span>
-                </div>
-                <div class="short-url-container">
-                    <a href="${shortUrl}" target="_blank" rel="noopener noreferrer" class="short-url">${shortUrl}</a>
-                    <button class="copy-btn" onclick="copyToClipboard('${shortUrl}', this)" aria-label="Copy URL to clipboard">
-                        📋 Copy
-                    </button>
-                </div>
-            `;
+            
+            // Create elements safely without innerHTML to prevent XSS
+            resultDiv.innerHTML = '';
+            
+            const labelDiv = document.createElement('div');
+            labelDiv.className = 'result-label';
+            
+            const successIcon = document.createElement('span');
+            successIcon.className = 'success-icon';
+            successIcon.textContent = '✅';
+            
+            const labelText = document.createElement('span');
+            labelText.textContent = 'Your short URL is ready!';
+            
+            labelDiv.appendChild(successIcon);
+            labelDiv.appendChild(labelText);
+            
+            const containerDiv = document.createElement('div');
+            containerDiv.className = 'short-url-container';
+            
+            const link = document.createElement('a');
+            link.href = shortUrl;
+            link.target = '_blank';
+            link.rel = 'noopener noreferrer';
+            link.className = 'short-url';
+            link.textContent = shortUrl;
+            
+            const copyBtn = document.createElement('button');
+            copyBtn.className = 'copy-btn';
+            copyBtn.setAttribute('aria-label', 'Copy URL to clipboard');
+            copyBtn.textContent = '📋 Copy';
+            copyBtn.addEventListener('click', function() {
+                copyToClipboard(shortUrl, this);
+            });
+            
+            containerDiv.appendChild(link);
+            containerDiv.appendChild(copyBtn);
+            
+            resultDiv.appendChild(labelDiv);
+            resultDiv.appendChild(containerDiv);
             resultDiv.style.display = 'block';
         }
 
         function showError(message) {
             const resultDiv = document.getElementById('result');
             resultDiv.className = 'error';
-            resultDiv.innerHTML = `
-                <div class="result-label">
-                    <span class="error-icon">❌</span>
-                    <span>Error: ${message}</span>
-                </div>
-            `;
+            
+            // Create elements safely without innerHTML to prevent XSS
+            resultDiv.innerHTML = '';
+            
+            const labelDiv = document.createElement('div');
+            labelDiv.className = 'result-label';
+            
+            const errorIcon = document.createElement('span');
+            errorIcon.className = 'error-icon';
+            errorIcon.textContent = '❌';
+            
+            const errorText = document.createElement('span');
+            errorText.textContent = `Error: ${message}`;
+            
+            labelDiv.appendChild(errorIcon);
+            labelDiv.appendChild(errorText);
+            
+            resultDiv.appendChild(labelDiv);
             resultDiv.style.display = 'block';
         }
 
