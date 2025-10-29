@@ -167,6 +167,29 @@
             cursor: not-allowed;
         }
 
+        .logout-btn {
+            background: #dc3545;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            margin-bottom: 20px;
+            margin-left: 10px;
+        }
+
+        .logout-btn:hover {
+            background: #c82333;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
         .info-badge {
             display: inline-block;
             background: #e7f3ff;
@@ -198,9 +221,14 @@
             <p>URL Shortener Statistics & Analytics</p>
         </header>
 
-        <button class="refresh-btn" onclick="loadStats()" id="refreshBtn">
-            🔄 Refresh Data
-        </button>
+        <div class="button-group">
+            <button class="refresh-btn" onclick="loadStats()" id="refreshBtn">
+                🔄 Refresh Data
+            </button>
+            <button class="logout-btn" onclick="logout()" id="logoutBtn">
+                🚪 Logout
+            </button>
+        </div>
 
         <div id="error" class="error" style="display: none;"></div>
         <div id="loading" class="loading">Loading statistics...</div>
@@ -261,24 +289,14 @@
             errorDiv.style.display = 'none';
 
             try {
-                // Include credentials from the HTTP Basic Auth that was used to load the page
+                // Include credentials from session cookie
                 const response = await fetch('/api/stats', {
                     credentials: 'include'
                 });
                 
-                // If 401, show authentication message (shouldn't happen if page loaded)
+                // If 401, redirect to login page (session expired)
                 if (response.status === 401) {
-                    errorDiv.innerHTML = `
-                        <strong>Authentication Required</strong><br>
-                        Your session may have expired. Please reload the page to log in again.<br>
-                        <em>Default credentials: username=<code>admin</code>, password=<code>admin123</code></em><br>
-                        <small>You can change these by setting ADMIN_USERNAME and ADMIN_PASSWORD environment variables.</small>
-                    `;
-                    errorDiv.style.display = 'block';
-                    loadingDiv.style.display = 'none';
-                    refreshBtn.disabled = false;
-                    refreshBtn.textContent = '🔄 Refresh Data';
-                    isLoading = false;
+                    window.location.href = '/login';
                     return;
                 }
                 
@@ -354,6 +372,26 @@
                 "'": '&#039;'
             };
             return text.replace(/[&<>"']/g, m => map[m]);
+        }
+
+        async function logout() {
+            try {
+                const response = await fetch('/api/logout', {
+                    method: 'POST',
+                    credentials: 'include'
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    window.location.href = '/login';
+                } else {
+                    alert('Logout failed. Please try again.');
+                }
+            } catch (error) {
+                console.error('Logout error:', error);
+                alert('An error occurred during logout.');
+            }
         }
 
         // Load stats on page load
