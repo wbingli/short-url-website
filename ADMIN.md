@@ -6,6 +6,17 @@ The admin dashboard provides statistics and analytics for the URL shortener serv
 
 The admin dashboard is accessible at `/admin` path.
 
+### How to Login
+
+When you visit `/admin` in your browser, you will be prompted with a standard HTTP Basic Authentication dialog asking for your username and password.
+
+1. Navigate to `http://your-domain/admin` (or `http://localhost:3000/admin` for local development)
+2. Your browser will display an authentication dialog
+3. Enter the username and password (default: `admin` / `admin123`)
+4. Click "Log in" or "OK" to access the dashboard
+
+The authentication dialog looks different in each browser, but will typically show a popup requesting credentials.
+
 ## Authentication
 
 The admin dashboard and stats API are protected with HTTP Basic Authentication.

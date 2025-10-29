@@ -261,14 +261,16 @@
             errorDiv.style.display = 'none';
 
             try {
-                // Browser will automatically handle HTTP Basic Auth via built-in dialog
-                const response = await fetch('/api/stats');
+                // Include credentials from the HTTP Basic Auth that was used to load the page
+                const response = await fetch('/api/stats', {
+                    credentials: 'include'
+                });
                 
-                // If 401, show authentication message
+                // If 401, show authentication message (shouldn't happen if page loaded)
                 if (response.status === 401) {
                     errorDiv.innerHTML = `
                         <strong>Authentication Required</strong><br>
-                        Please reload the page and enter credentials when prompted by your browser.<br>
+                        Your session may have expired. Please reload the page to log in again.<br>
                         <em>Default credentials: username=<code>admin</code>, password=<code>admin123</code></em><br>
                         <small>You can change these by setting ADMIN_USERNAME and ADMIN_PASSWORD environment variables.</small>
                     `;

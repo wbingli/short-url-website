@@ -328,8 +328,8 @@ app.get('/api/stats', adminAuth, async (req, res) => {
   }
 });
 
-// Serve admin.html for admin path (no auth on page, only on API)
-app.get('/admin', (_req: express.Request, res: express.Response) => {
+// Serve admin.html for admin path (requires authentication)
+app.get('/admin', adminAuth, (_req: express.Request, res: express.Response) => {
   const adminPath = path.join(publicPath, 'admin.html');
   console.log('Attempting to serve admin.html from:', adminPath);
 
