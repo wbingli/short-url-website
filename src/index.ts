@@ -84,16 +84,28 @@ function adminAuth(req: express.Request, res: express.Response, next: express.Ne
   const adminUsername = process.env.ADMIN_USERNAME || 'admin';
   const adminPassword = process.env.ADMIN_PASSWORD || 'admin123';
   
+  // Determine if this is an API request or HTML page request
+  const isApiRequest = req.path.startsWith('/api/');
+  
   if (!authHeader || !authHeader.startsWith('Basic ')) {
     res.setHeader('WWW-Authenticate', 'Basic realm="Admin Area"');
-    return res.status(401).json({ error: 'Authentication required' });
+    if (isApiRequest) {
+      return res.status(401).json({ error: 'Authentication required' });
+    } else {
+      // For HTML pages, send text response to trigger browser auth dialog
+      return res.status(401).send('Unauthorized');
+    }
   }
   
   try {
     const base64Credentials = authHeader.split(' ')[1];
     if (!base64Credentials) {
       res.setHeader('WWW-Authenticate', 'Basic realm="Admin Area"');
-      return res.status(401).json({ error: 'Invalid authorization header' });
+      if (isApiRequest) {
+        return res.status(401).json({ error: 'Invalid authorization header' });
+      } else {
+        return res.status(401).send('Unauthorized');
+      }
     }
     
     const credentials = Buffer.from(base64Credentials, 'base64').toString('utf-8');
@@ -101,7 +113,11 @@ function adminAuth(req: express.Request, res: express.Response, next: express.Ne
     
     if (colonIndex === -1) {
       res.setHeader('WWW-Authenticate', 'Basic realm="Admin Area"');
-      return res.status(401).json({ error: 'Invalid credentials format' });
+      if (isApiRequest) {
+        return res.status(401).json({ error: 'Invalid credentials format' });
+      } else {
+        return res.status(401).send('Unauthorized');
+      }
     }
     
     const username = credentials.substring(0, colonIndex);
@@ -111,11 +127,19 @@ function adminAuth(req: express.Request, res: express.Response, next: express.Ne
       next();
     } else {
       res.setHeader('WWW-Authenticate', 'Basic realm="Admin Area"');
-      return res.status(401).json({ error: 'Invalid credentials' });
+      if (isApiRequest) {
+        return res.status(401).json({ error: 'Invalid credentials' });
+      } else {
+        return res.status(401).send('Unauthorized');
+      }
     }
   } catch (error) {
     res.setHeader('WWW-Authenticate', 'Basic realm="Admin Area"');
-    return res.status(401).json({ error: 'Authentication failed' });
+    if (isApiRequest) {
+      return res.status(401).json({ error: 'Authentication failed' });
+    } else {
+      return res.status(401).send('Unauthorized');
+    }
   }
 }
 
