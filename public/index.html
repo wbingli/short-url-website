@@ -356,12 +356,6 @@
             }
         }
 
-        function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        }
-
         function showSuccess(shortUrl) {
             const resultDiv = document.getElementById('result');
             resultDiv.className = 'success';
