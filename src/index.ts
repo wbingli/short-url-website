@@ -61,7 +61,8 @@ app.use(session({
   cookie: {
     secure: process.env.NODE_ENV === 'production', // Use secure cookies in production
     httpOnly: true,
-    maxAge: 24 * 60 * 60 * 1000 // 24 hours
+    maxAge: 24 * 60 * 60 * 1000, // 24 hours
+    sameSite: 'strict' // CSRF protection via SameSite cookie attribute
   }
 }));
 
