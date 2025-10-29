@@ -429,12 +429,12 @@
         async function copyToClipboard(text, button) {
             try {
                 await navigator.clipboard.writeText(text);
-                const originalText = button.innerHTML;
-                button.innerHTML = '✓ Copied!';
+                const originalText = button.textContent;
+                button.textContent = '✓ Copied!';
                 button.classList.add('copied');
                 
                 setTimeout(() => {
-                    button.innerHTML = originalText;
+                    button.textContent = originalText;
                     button.classList.remove('copied');
                 }, 2000);
             } catch (err) {
@@ -448,10 +448,10 @@
                 
                 try {
                     document.execCommand('copy');
-                    button.innerHTML = '✓ Copied!';
+                    button.textContent = '✓ Copied!';
                     button.classList.add('copied');
                     setTimeout(() => {
-                        button.innerHTML = '📋 Copy';
+                        button.textContent = '📋 Copy';
                         button.classList.remove('copied');
                     }, 2000);
                 } catch (err) {
