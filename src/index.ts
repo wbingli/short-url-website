@@ -44,8 +44,18 @@ app.use(express.json());
 app.use(cookieParser());
 
 // Session configuration
+// Generate a random secret in production if not provided
+const sessionSecret = process.env.SESSION_SECRET || 
+  (process.env.NODE_ENV === 'production' 
+    ? crypto.randomBytes(32).toString('hex') 
+    : 'dev-secret-key-change-in-production');
+
+if (process.env.NODE_ENV === 'production' && !process.env.SESSION_SECRET) {
+  console.warn('WARNING: SESSION_SECRET not set in production. Using a random secret. Sessions will not persist across server restarts.');
+}
+
 app.use(session({
-  secret: process.env.SESSION_SECRET || 'your-secret-key-change-in-production',
+  secret: sessionSecret,
   resave: false,
   saveUninitialized: false,
   cookie: {
@@ -358,6 +368,8 @@ app.get('/', (_req: express.Request, res: express.Response) => {
 });
 
 // Login endpoint
+// NOTE: In production, consider adding rate limiting middleware (e.g., express-rate-limit)
+// to protect against brute force attacks
 app.post('/api/login', express.urlencoded({ extended: true }), (req, res) => {
   const { username, password } = req.body;
   
