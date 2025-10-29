@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard - URL Shortener</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+        }
+
+        header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.2);
+        }
+
+        header p {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .stat-card {
+            background: white;
+            border-radius: 12px;
+            padding: 25px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        .stat-card h3 {
+            color: #667eea;
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 10px;
+        }
+
+        .stat-card .value {
+            font-size: 2.5rem;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 5px;
+        }
+
+        .stat-card .label {
+            color: #666;
+            font-size: 0.9rem;
+        }
+
+        .recent-urls {
+            background: white;
+            border-radius: 12px;
+            padding: 25px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+        }
+
+        .recent-urls h2 {
+            color: #667eea;
+            margin-bottom: 20px;
+            font-size: 1.5rem;
+        }
+
+        .url-list {
+            list-style: none;
+        }
+
+        .url-item {
+            padding: 15px;
+            border-bottom: 1px solid #eee;
+            transition: background-color 0.2s;
+        }
+
+        .url-item:last-child {
+            border-bottom: none;
+        }
+
+        .url-item:hover {
+            background-color: #f8f9fa;
+        }
+
+        .url-item .short-id {
+            font-weight: bold;
+            color: #667eea;
+            font-family: monospace;
+            font-size: 1.1rem;
+        }
+
+        .url-item .original-url {
+            color: #333;
+            margin: 5px 0;
+            word-break: break-all;
+        }
+
+        .url-item .timestamp {
+            color: #999;
+            font-size: 0.85rem;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: white;
+            font-size: 1.2rem;
+        }
+
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border: 1px solid #f5c6cb;
+        }
+
+        .refresh-btn {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            margin-bottom: 20px;
+        }
+
+        .refresh-btn:hover {
+            background: #5568d3;
+        }
+
+        .refresh-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        .info-badge {
+            display: inline-block;
+            background: #e7f3ff;
+            color: #0066cc;
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-size: 0.85rem;
+            margin-top: 10px;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #999;
+        }
+
+        .empty-state svg {
+            width: 80px;
+            height: 80px;
+            margin-bottom: 20px;
+            opacity: 0.5;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📊 Admin Dashboard</h1>
+            <p>URL Shortener Statistics & Analytics</p>
+        </header>
+
+        <button class="refresh-btn" onclick="loadStats()" id="refreshBtn">
+            🔄 Refresh Data
+        </button>
+
+        <div id="error" class="error" style="display: none;"></div>
+        <div id="loading" class="loading">Loading statistics...</div>
+
+        <div id="content" style="display: none;">
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <h3>Total URLs</h3>
+                    <div class="value" id="totalUrls">-</div>
+                    <div class="label">Unique shortened URLs</div>
+                </div>
+
+                <div class="stat-card">
+                    <h3>Last 24 Hours</h3>
+                    <div class="value" id="urlsLast24Hours">-</div>
+                    <div class="label">URLs created today</div>
+                </div>
+
+                <div class="stat-card">
+                    <h3>Last 7 Days</h3>
+                    <div class="value" id="urlsLast7Days">-</div>
+                    <div class="label">URLs created this week</div>
+                </div>
+
+                <div class="stat-card">
+                    <h3>Storage Type</h3>
+                    <div class="value" id="storageType" style="font-size: 1.5rem;">-</div>
+                    <div class="label">Current backend</div>
+                    <div class="info-badge" id="lastUpdated">-</div>
+                </div>
+            </div>
+
+            <div class="recent-urls">
+                <h2>📋 Recent URLs</h2>
+                <ul class="url-list" id="recentUrlsList">
+                    <!-- URLs will be populated here -->
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let isLoading = false;
+
+        async function loadStats() {
+            if (isLoading) return;
+            
+            isLoading = true;
+            const refreshBtn = document.getElementById('refreshBtn');
+            const loadingDiv = document.getElementById('loading');
+            const contentDiv = document.getElementById('content');
+            const errorDiv = document.getElementById('error');
+
+            refreshBtn.disabled = true;
+            refreshBtn.textContent = '⏳ Loading...';
+            loadingDiv.style.display = 'block';
+            contentDiv.style.display = 'none';
+            errorDiv.style.display = 'none';
+
+            try {
+                // Include credentials from the HTTP Basic Auth that was used to load the page
+                const response = await fetch('/api/stats', {
+                    credentials: 'include'
+                });
+                
+                // If 401, show authentication message (shouldn't happen if page loaded)
+                if (response.status === 401) {
+                    errorDiv.innerHTML = `
+                        <strong>Authentication Required</strong><br>
+                        Your session may have expired. Please reload the page to log in again.<br>
+                        <em>Default credentials: username=<code>admin</code>, password=<code>admin123</code></em><br>
+                        <small>You can change these by setting ADMIN_USERNAME and ADMIN_PASSWORD environment variables.</small>
+                    `;
+                    errorDiv.style.display = 'block';
+                    loadingDiv.style.display = 'none';
+                    refreshBtn.disabled = false;
+                    refreshBtn.textContent = '🔄 Refresh Data';
+                    isLoading = false;
+                    return;
+                }
+                
+                const data = await response.json();
+
+                if (!response.ok || !data.success) {
+                    throw new Error(data.error || 'Failed to fetch statistics');
+                }
+
+                const stats = data.stats;
+
+                // Update stat cards
+                document.getElementById('totalUrls').textContent = stats.totalUrls.toLocaleString();
+                document.getElementById('urlsLast24Hours').textContent = stats.urlsLast24Hours.toLocaleString();
+                document.getElementById('urlsLast7Days').textContent = stats.urlsLast7Days.toLocaleString();
+                document.getElementById('storageType').textContent = stats.storageType.toUpperCase();
+                
+                const lastUpdated = new Date(stats.timestamp).toLocaleString();
+                document.getElementById('lastUpdated').textContent = `Updated: ${lastUpdated}`;
+
+                // Update recent URLs list
+                const urlsList = document.getElementById('recentUrlsList');
+                urlsList.innerHTML = '';
+
+                if (stats.recentUrls && stats.recentUrls.length > 0) {
+                    stats.recentUrls.forEach(url => {
+                        const li = document.createElement('li');
+                        li.className = 'url-item';
+                        
+                        const createdDate = new Date(url.createdAt).toLocaleString();
+                        
+                        li.innerHTML = `
+                            <div class="short-id">/s/${url.shortId}</div>
+                            <div class="original-url">${escapeHtml(url.originalUrl)}</div>
+                            <div class="timestamp">Created: ${createdDate}</div>
+                        `;
+                        
+                        urlsList.appendChild(li);
+                    });
+                } else {
+                    urlsList.innerHTML = `
+                        <div class="empty-state">
+                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                                      d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"></path>
+                            </svg>
+                            <p>No URLs have been shortened yet.</p>
+                        </div>
+                    `;
+                }
+
+                loadingDiv.style.display = 'none';
+                contentDiv.style.display = 'block';
+
+            } catch (error) {
+                console.error('Error loading stats:', error);
+                errorDiv.textContent = `Error: ${error.message}`;
+                errorDiv.style.display = 'block';
+                loadingDiv.style.display = 'none';
+            } finally {
+                isLoading = false;
+                refreshBtn.disabled = false;
+                refreshBtn.textContent = '🔄 Refresh Data';
+            }
+        }
+
+        function escapeHtml(text) {
+            const map = {
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#039;'
+            };
+            return text.replace(/[&<>"']/g, m => map[m]);
+        }
+
+        // Load stats on page load
+        loadStats();
+
+        // Auto-refresh every 30 seconds
+        setInterval(loadStats, 30000);
+    </script>
+</body>
+</html>

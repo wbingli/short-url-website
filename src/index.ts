@@ -5,6 +5,7 @@ import { kv } from '@vercel/kv';
 import dotenv from 'dotenv';
 import { createClient } from 'redis';
 import healthCheckHandler from './api/health';
+import { getStats } from './api/stats';
 import { hashUrl } from './migrations/url-reverse-index';
 import { UrlMapping } from './types';
 
@@ -50,7 +51,97 @@ function generateShortId(): string {
   return crypto.randomBytes(4).toString('hex');
 }
 
+// Helper function to get storage configuration
+async function getStorageConfig() {
+  let useRedis = false;
+  let kvInstance;
+
+  try {
+    // Check if we should use Redis client
+    if (redisClient && await redisClient.ping()) {
+      console.log('Using Redis client for storage');
+      useRedis = true;
+      return { useRedis, redisClient, kvInstance: null };
+    } else {
+      // Try to initialize Vercel KV
+      kvInstance = kv;
+      await kvInstance.ping();
+      return { useRedis: false, redisClient: null, kvInstance };
+    }
+  } catch (error: any) {
+    console.warn('KV storage not available:', error?.message);
+    return { useRedis: false, redisClient: null, kvInstance: null };
+  }
+}
+
 // Migration and hashing functions moved to src/migrations/url-reverse-index.ts
+
+// Simple authentication middleware for admin endpoints
+function adminAuth(req: express.Request, res: express.Response, next: express.NextFunction) {
+  const authHeader = req.headers.authorization;
+  
+  // Get admin credentials from environment variables
+  const adminUsername = process.env.ADMIN_USERNAME || 'admin';
+  const adminPassword = process.env.ADMIN_PASSWORD || 'admin123';
+  
+  // Determine if this is an API request or HTML page request
+  const isApiRequest = req.path.startsWith('/api/');
+  
+  if (!authHeader || !authHeader.startsWith('Basic ')) {
+    res.setHeader('WWW-Authenticate', 'Basic realm="Admin Area"');
+    if (isApiRequest) {
+      return res.status(401).json({ error: 'Authentication required' });
+    } else {
+      // For HTML pages, send text response to trigger browser auth dialog
+      return res.status(401).send('Unauthorized');
+    }
+  }
+  
+  try {
+    const base64Credentials = authHeader.split(' ')[1];
+    if (!base64Credentials) {
+      res.setHeader('WWW-Authenticate', 'Basic realm="Admin Area"');
+      if (isApiRequest) {
+        return res.status(401).json({ error: 'Invalid authorization header' });
+      } else {
+        return res.status(401).send('Unauthorized');
+      }
+    }
+    
+    const credentials = Buffer.from(base64Credentials, 'base64').toString('utf-8');
+    const colonIndex = credentials.indexOf(':');
+    
+    if (colonIndex === -1) {
+      res.setHeader('WWW-Authenticate', 'Basic realm="Admin Area"');
+      if (isApiRequest) {
+        return res.status(401).json({ error: 'Invalid credentials format' });
+      } else {
+        return res.status(401).send('Unauthorized');
+      }
+    }
+    
+    const username = credentials.substring(0, colonIndex);
+    const password = credentials.substring(colonIndex + 1);
+    
+    if (username === adminUsername && password === adminPassword) {
+      next();
+    } else {
+      res.setHeader('WWW-Authenticate', 'Basic realm="Admin Area"');
+      if (isApiRequest) {
+        return res.status(401).json({ error: 'Invalid credentials' });
+      } else {
+        return res.status(401).send('Unauthorized');
+      }
+    }
+  } catch (error) {
+    res.setHeader('WWW-Authenticate', 'Basic realm="Admin Area"');
+    if (isApiRequest) {
+      return res.status(401).json({ error: 'Authentication failed' });
+    } else {
+      return res.status(401).send('Unauthorized');
+    }
+  }
+}
 
 // API endpoint to create short URL
 app.post('/api/shorten', async (req: express.Request, res: express.Response) => {
@@ -244,6 +335,36 @@ app.get('/', (_req: express.Request, res: express.Response) => {
 // Health check API endpoint - delegate to the Vercel handler
 app.get('/api/health', (req, res) => {
   healthCheckHandler(req as any, res as any);
+});
+
+// Stats API endpoint for admin dashboard
+app.get('/api/stats', adminAuth, async (req, res) => {
+  try {
+    const storage = await getStorageConfig();
+    await getStats(req, res, storage);
+  } catch (error: any) {
+    console.error('Error in stats endpoint:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch statistics',
+      details: process.env.NODE_ENV === 'development' ? error?.message : undefined
+    });
+  }
+});
+
+// Serve admin.html for admin path (requires authentication)
+app.get('/admin', adminAuth, (_req: express.Request, res: express.Response) => {
+  const adminPath = path.join(publicPath, 'admin.html');
+  console.log('Attempting to serve admin.html from:', adminPath);
+
+  res.sendFile(adminPath, (err) => {
+    if (err) {
+      console.error('Error serving admin.html:', err);
+      res.status(500).send('Error loading admin page');
+    } else {
+      console.log('Successfully served admin.html');
+    }
+  });
 });
 
 // Handle 404s
