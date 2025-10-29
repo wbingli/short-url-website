@@ -4,6 +4,8 @@ import crypto from 'crypto';
 import { kv } from '@vercel/kv';
 import dotenv from 'dotenv';
 import { createClient } from 'redis';
+import session from 'express-session';
+import cookieParser from 'cookie-parser';
 import healthCheckHandler from './api/health';
 import { getStats } from './api/stats';
 import { hashUrl } from './migrations/url-reverse-index';
@@ -39,6 +41,19 @@ const port = process.env.PORT || 3000;
 
 // Middleware
 app.use(express.json());
+app.use(cookieParser());
+
+// Session configuration
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'your-secret-key-change-in-production',
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    secure: process.env.NODE_ENV === 'production', // Use secure cookies in production
+    httpOnly: true,
+    maxAge: 24 * 60 * 60 * 1000 // 24 hours
+  }
+}));
 
 // Request logging middleware
 app.use((req: express.Request, res: express.Response, next: express.NextFunction) => {
@@ -78,6 +93,11 @@ async function getStorageConfig() {
 
 // Simple authentication middleware for admin endpoints
 function adminAuth(req: express.Request, res: express.Response, next: express.NextFunction) {
+  // Check if user is already authenticated via session
+  if (req.session && req.session.isAuthenticated) {
+    return next();
+  }
+  
   const authHeader = req.headers.authorization;
   
   // Get admin credentials from environment variables
@@ -124,6 +144,11 @@ function adminAuth(req: express.Request, res: express.Response, next: express.Ne
     const password = credentials.substring(colonIndex + 1);
     
     if (username === adminUsername && password === adminPassword) {
+      // Store authentication in session
+      if (req.session) {
+        req.session.isAuthenticated = true;
+        req.session.username = username;
+      }
       next();
     } else {
       res.setHeader('WWW-Authenticate', 'Basic realm="Admin Area"');
@@ -332,6 +357,48 @@ app.get('/', (_req: express.Request, res: express.Response) => {
   });
 });
 
+// Login endpoint
+app.post('/api/login', express.urlencoded({ extended: true }), (req, res) => {
+  const { username, password } = req.body;
+  
+  const adminUsername = process.env.ADMIN_USERNAME || 'admin';
+  const adminPassword = process.env.ADMIN_PASSWORD || 'admin123';
+  
+  if (username === adminUsername && password === adminPassword) {
+    if (req.session) {
+      req.session.isAuthenticated = true;
+      req.session.username = username;
+    }
+    res.json({ success: true, message: 'Login successful' });
+  } else {
+    res.status(401).json({ success: false, error: 'Invalid credentials' });
+  }
+});
+
+// Logout endpoint
+app.post('/api/logout', (req, res) => {
+  if (req.session) {
+    req.session.destroy((err) => {
+      if (err) {
+        return res.status(500).json({ success: false, error: 'Failed to logout' });
+      }
+      res.clearCookie('connect.sid');
+      res.json({ success: true, message: 'Logout successful' });
+    });
+  } else {
+    res.json({ success: true, message: 'Logout successful' });
+  }
+});
+
+// Check authentication status
+app.get('/api/auth-status', (req, res) => {
+  if (req.session && req.session.isAuthenticated) {
+    res.json({ authenticated: true, username: req.session.username });
+  } else {
+    res.json({ authenticated: false });
+  }
+});
+
 // Health check API endpoint - delegate to the Vercel handler
 app.get('/api/health', (req, res) => {
   healthCheckHandler(req as any, res as any);
@@ -352,19 +419,32 @@ app.get('/api/stats', adminAuth, async (req, res) => {
   }
 });
 
-// Serve admin.html for admin path (requires authentication)
-app.get('/admin', adminAuth, (_req: express.Request, res: express.Response) => {
-  const adminPath = path.join(publicPath, 'admin.html');
-  console.log('Attempting to serve admin.html from:', adminPath);
+// Serve login page
+app.get('/login', (_req: express.Request, res: express.Response) => {
+  const loginPath = path.join(publicPath, 'login.html');
+  res.sendFile(loginPath);
+});
 
-  res.sendFile(adminPath, (err) => {
-    if (err) {
-      console.error('Error serving admin.html:', err);
-      res.status(500).send('Error loading admin page');
-    } else {
-      console.log('Successfully served admin.html');
-    }
-  });
+// Serve admin.html for admin path (requires authentication)
+app.get('/admin', (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  // Check if user is authenticated via session
+  if (req.session && req.session.isAuthenticated) {
+    const adminPath = path.join(publicPath, 'admin.html');
+    console.log('User is authenticated, serving admin.html from:', adminPath);
+    
+    res.sendFile(adminPath, (err) => {
+      if (err) {
+        console.error('Error serving admin.html:', err);
+        res.status(500).send('Error loading admin page');
+      } else {
+        console.log('Successfully served admin.html');
+      }
+    });
+  } else {
+    // Redirect to login page
+    console.log('User not authenticated, redirecting to login');
+    res.redirect('/login');
+  }
 });
 
 // Handle 404s
