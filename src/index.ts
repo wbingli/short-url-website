@@ -45,10 +45,14 @@ app.use(cookieParser());
 
 // Session configuration
 // Generate a random secret in production if not provided
-const sessionSecret = process.env.SESSION_SECRET || 
-  (process.env.NODE_ENV === 'production' 
-    ? crypto.randomBytes(32).toString('hex') 
+const sessionSecret = process.env.SESSION_SECRET ||
+  (process.env.NODE_ENV === 'production'
+    ? crypto.randomBytes(32).toString('hex')
     : 'dev-secret-key-change-in-production');
+
+const authCookieSecret = process.env.AUTH_COOKIE_SECRET || sessionSecret;
+const AUTH_COOKIE_NAME = 'admin_auth';
+const AUTH_COOKIE_MAX_AGE = 24 * 60 * 60 * 1000; // 24 hours
 
 if (process.env.NODE_ENV === 'production' && !process.env.SESSION_SECRET) {
   console.warn('WARNING: SESSION_SECRET not set in production. Using a random secret. Sessions will not persist across server restarts.');
@@ -65,6 +69,100 @@ app.use(session({
     sameSite: 'strict' // CSRF protection via SameSite cookie attribute
   }
 }));
+
+function createAuthToken(username: string): string {
+  const timestamp = Date.now().toString();
+  const payload = `${username}:${timestamp}`;
+  const signature = crypto.createHmac('sha256', authCookieSecret)
+    .update(payload)
+    .digest('hex');
+  return Buffer.from(`${payload}:${signature}`).toString('base64url');
+}
+
+function verifyAuthToken(token: string): string | null {
+  try {
+    const decoded = Buffer.from(token, 'base64url').toString('utf-8');
+    const parts = decoded.split(':');
+
+    if (parts.length !== 3) {
+      return null;
+    }
+
+    const [username, timestampStr, signature] = parts;
+    const payload = `${username}:${timestampStr}`;
+    const expectedSignature = crypto.createHmac('sha256', authCookieSecret)
+      .update(payload)
+      .digest('hex');
+
+    const signatureBuffer = Buffer.from(signature, 'hex');
+    const expectedBuffer = Buffer.from(expectedSignature, 'hex');
+
+    if (
+      signatureBuffer.length !== expectedBuffer.length ||
+      !crypto.timingSafeEqual(signatureBuffer, expectedBuffer)
+    ) {
+      return null;
+    }
+
+    const timestamp = Number.parseInt(timestampStr, 10);
+    if (Number.isNaN(timestamp)) {
+      return null;
+    }
+
+    if (Date.now() - timestamp > AUTH_COOKIE_MAX_AGE) {
+      return null;
+    }
+
+    return username;
+  } catch (error) {
+    return null;
+  }
+}
+
+function setAuthCookie(res: express.Response, username: string) {
+  const token = createAuthToken(username);
+  res.cookie(AUTH_COOKIE_NAME, token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'strict',
+    maxAge: AUTH_COOKIE_MAX_AGE,
+    path: '/'
+  });
+}
+
+function clearAuthCookie(res: express.Response) {
+  res.clearCookie(AUTH_COOKIE_NAME, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'strict',
+    path: '/'
+  });
+}
+
+function getAuthCookieValue(req: express.Request): string | undefined {
+  const cookies = (req as any).cookies as Record<string, string | undefined> | undefined;
+  return cookies?.[AUTH_COOKIE_NAME];
+}
+
+function getAuthenticatedUser(req: express.Request): string | null {
+  const existingUser = (req as any).authenticatedUser;
+  if (existingUser) {
+    return existingUser;
+  }
+
+  const token = getAuthCookieValue(req);
+  if (!token) {
+    return null;
+  }
+
+  const username = verifyAuthToken(token);
+  if (!username) {
+    return null;
+  }
+
+  (req as any).authenticatedUser = username;
+  return username;
+}
 
 // Request logging middleware
 app.use((req: express.Request, res: express.Response, next: express.NextFunction) => {
@@ -104,11 +202,16 @@ async function getStorageConfig() {
 
 // Simple authentication middleware for admin endpoints
 function adminAuth(req: express.Request, res: express.Response, next: express.NextFunction) {
-  // Check if user is already authenticated via session
-  if (req.session && req.session.isAuthenticated) {
+  const authenticatedUser = getAuthenticatedUser(req);
+  if (authenticatedUser) {
+    setAuthCookie(res, authenticatedUser); // Refresh cookie expiry
     return next();
   }
-  
+
+  if (getAuthCookieValue(req)) {
+    clearAuthCookie(res);
+  }
+
   const authHeader = req.headers.authorization;
   
   // Get admin credentials from environment variables
@@ -160,6 +263,8 @@ function adminAuth(req: express.Request, res: express.Response, next: express.Ne
         req.session.isAuthenticated = true;
         req.session.username = username;
       }
+      setAuthCookie(res, username);
+      (req as any).authenticatedUser = username;
       next();
     } else {
       res.setHeader('WWW-Authenticate', 'Basic realm="Admin Area"');
@@ -382,6 +487,7 @@ app.post('/api/login', express.urlencoded({ extended: true }), (req, res) => {
       req.session.isAuthenticated = true;
       req.session.username = username;
     }
+    setAuthCookie(res, username);
     res.json({ success: true, message: 'Login successful' });
   } else {
     res.status(401).json({ success: false, error: 'Invalid credentials' });
@@ -396,18 +502,24 @@ app.post('/api/logout', (req, res) => {
         return res.status(500).json({ success: false, error: 'Failed to logout' });
       }
       res.clearCookie('connect.sid');
+      clearAuthCookie(res);
       res.json({ success: true, message: 'Logout successful' });
     });
   } else {
+    clearAuthCookie(res);
     res.json({ success: true, message: 'Logout successful' });
   }
 });
 
 // Check authentication status
 app.get('/api/auth-status', (req, res) => {
-  if (req.session && req.session.isAuthenticated) {
-    res.json({ authenticated: true, username: req.session.username });
+  const username = getAuthenticatedUser(req);
+  if (username) {
+    res.json({ authenticated: true, username });
   } else {
+    if (getAuthCookieValue(req)) {
+      clearAuthCookie(res);
+    }
     res.json({ authenticated: false });
   }
 });
@@ -440,11 +552,13 @@ app.get('/login', (_req: express.Request, res: express.Response) => {
 
 // Serve admin.html for admin path (requires authentication)
 app.get('/admin', (req: express.Request, res: express.Response, next: express.NextFunction) => {
-  // Check if user is authenticated via session
-  if (req.session && req.session.isAuthenticated) {
+  // Check if user is authenticated via cookie or session
+  const username = getAuthenticatedUser(req);
+  if (username) {
+    setAuthCookie(res, username);
     const adminPath = path.join(publicPath, 'admin.html');
     console.log('User is authenticated, serving admin.html from:', adminPath);
-    
+
     res.sendFile(adminPath, (err) => {
       if (err) {
         console.error('Error serving admin.html:', err);
@@ -456,6 +570,9 @@ app.get('/admin', (req: express.Request, res: express.Response, next: express.Ne
   } else {
     // Redirect to login page
     console.log('User not authenticated, redirecting to login');
+    if (getAuthCookieValue(req)) {
+      clearAuthCookie(res);
+    }
     res.redirect('/login');
   }
 });
