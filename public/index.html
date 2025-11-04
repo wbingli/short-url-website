@@ -208,15 +208,17 @@
             padding: 12px 15px;
             border-radius: 8px;
             margin-top: 10px;
+            flex-wrap: wrap;
         }
 
         .short-url {
-            flex: 1;
+            flex: 1 1 auto;
+            min-width: 0;
             color: white;
             font-weight: 600;
             font-size: 1.1rem;
-            word-break: break-all;
             text-decoration: none;
+            overflow-wrap: anywhere;
         }
 
         .short-url:hover {
@@ -234,6 +236,7 @@
             transition: all 0.2s ease;
             white-space: nowrap;
             font-weight: 500;
+            flex-shrink: 0;
         }
 
         .copy-btn:hover {
